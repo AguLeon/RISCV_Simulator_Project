@@ -1,8 +1,0 @@
-State after executing cycle: 0
-IF.PC: 4
-IF.nop: False
----------------------------------------------------
-State after executing cycle: 1
-IF.PC: 4
-IF.nop: False
----------------------------------------------------

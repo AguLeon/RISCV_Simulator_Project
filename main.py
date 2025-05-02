@@ -19,8 +19,8 @@ def Performance_metrics(opFilePath: str, ss: SingleStageCore, fs: FiveStageCore)
     fs_metrics = [
         "Performance of Five Stage: ",
         f"#Cycles -> {fs.cycle}",
-        f"CPI ->  {fs.cycle / fs.inst:.8f}",
-        f"IPC ->  {fs.inst / fs.cycle:.8f}",
+        f"CPI ->  {fs.cycle / fs.num_instr:.8f}",
+        f"IPC ->  {fs.num_instr / fs.cycle:.8f}",
     ]
 
     with open(opFilePath + os.sep + "PerformanceMetrics.txt", "w") as f:
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     args, unknown = parser.parse_known_args()
 
     # the current directory for code
-    ioDir = os.path.join("./input_files", args.iodir)
+    ioDir = os.path.join("./inputOutput_files", args.iodir)
 
     # create the input directory if it doesn't exist
     if not os.path.exists(ioDir):
