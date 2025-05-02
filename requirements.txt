@@ -1,0 +1,4 @@
+# Project dependencies for RV32I single-stage simulator
+# All dependencies are part of the Python Standard Library
+
+# No external packages required!
