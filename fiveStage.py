@@ -1,44 +1,24 @@
-# five stage processor states, functions
+# Implementation of the Five Stage Core
 
-from memoryReg import *
+from memoryReg import * # Get memoryReg.py (should be in same directory)
 
-class State_five(object):
-    def __init__(self):
-        self.IF = InstructionFetchState()
-        self.ID = InstructionDecodeState()
-        self.EX = ExecutionState()
-        self.MEM = MemoryAccessState()
-        self.WB = WriteBackState()
 
-    def next(self):
-        self.ID = InstructionDecodeState()
-        self.EX = ExecutionState()
-        self.MEM = MemoryAccessState()
-        self.WB = WriteBackState()
+#------------------------------------------------------------------------
 
-class Core_five(object):
-    def __init__(self, ioDir, imem, dmem):
-        self.myRF = RegisterFile(ioDir)
-        self.cycle = 0
-        self.num_instr = 0
-        self.halted = False
-        self.ioDir = ioDir
-        self.state = State_five()
-        self.nextState = State_five()
-        self.ext_imem = imem
-        self.ext_dmem = dmem
+# States definitions: WB, MEM, EX, ID, IF
+# dictionaries match order in provided test-cases
+ 
 
-#-----------------------------------------
-# five stages
-class InstructionFetchState:
+
+class State_IF:
     def __init__(self) -> None:
         self.nop: bool = False
         self.PC: int = 0
 
     def __dict__(self):
         return {"PC": self.PC, "nop": self.nop}
-
-class InstructionDecodeState:
+    
+class State_ID:
     def __init__(self) -> None:
         self.nop: bool = True
         self.hazard_nop: bool = False
@@ -47,8 +27,8 @@ class InstructionDecodeState:
 
     def __dict__(self):
         return {"Instr": self.instr[::-1], "nop": self.nop}
-
-class ExecutionState:
+    
+class State_EX:
     def __init__(self) -> None:
         self.nop: bool = True
         self.instr: str = ""
@@ -68,8 +48,8 @@ class ExecutionState:
         return {
             "nop": self.nop,
             "instr": self.instr[::-1],
-            "Operand1": self.read_data_1,
-            "Operand2": self.read_data_2,
+            "Read_data_1": self.read_data_1,
+            "Read_data_2": self.read_data_2,
             "Imm": self.imm,
             "Rs": self.rs,
             "Rt": self.rt,
@@ -80,8 +60,9 @@ class ExecutionState:
             "alu_op": "".join(list(map(str, self.alu_op))),
             "wrt_enable": int(self.write_enable),
         }
+    
 
-class MemoryAccessState:
+class State_MEM:
     def __init__(self) -> None:
         self.nop: bool = True
         self.alu_result: str = "0" * 32
@@ -106,7 +87,8 @@ class MemoryAccessState:
             "wrt_enable": int(self.write_enable),
         }
 
-class WriteBackState:
+
+class State_WB:
     def __init__(self) -> None:
         self.nop: bool = True
         self.write_data: str = "0" * 32
@@ -125,10 +107,41 @@ class WriteBackState:
             "wrt_enable": int(self.write_enable),
         }
 
-class InstructionFetchStage:
+#------------------------------------------------------------------------
+
+class State_FS(object):
+    def __init__(self):
+        self.IF = State_IF()
+        self.ID = State_ID()
+        self.EX = State_EX()
+        self.MEM = State_MEM()
+        self.WB = State_WB()
+
+    def next(self):
+        self.ID = State_ID()
+        self.EX = State_EX()
+        self.MEM = State_MEM()
+        self.WB = State_WB()
+
+class Core_FS(object):
+    def __init__(self, ioDir, imem, dmem):
+        self.myRF = RegisterFile(ioDir)
+        self.cycle = 0
+        self.num_instr = 0
+        self.halted = False
+        self.ioDir = ioDir
+        self.state = State_FS()
+        self.nextState = State_FS()
+        self.ext_imem = imem
+        self.ext_dmem = dmem
+
+#------------------------------------------------------------------------
+    
+# Stages definition: IF, ID, EX, MEM, WB
+class Stage_IF:
     def __init__(
         self,
-        state: State_five,
+        state: State_FS,
         ins_mem: InsMem,
     ):
         self.state = state
@@ -146,16 +159,17 @@ class InstructionFetchStage:
             self.state.IF.PC += 4
             self.state.ID.instr = instr
 
-class InstructionDecodeStage:
+class Stage_ID:
     def __init__(
         self,
-        state: State_five,
+        state: State_FS,
         rf: RegisterFile,
     ):
         self.state = state
         self.rf = rf
 
-    def detect_hazard(self, rs):
+       
+    def hazardDetect(self, rs):
         if rs == self.state.MEM.write_reg_addr and self.state.MEM.read_mem == 0:
             # EX to 1st
             return 2
@@ -170,10 +184,10 @@ class InstructionDecodeStage:
         else:
             return 0
 
-    def read_data(self, rs, forward_signal):
-        if forward_signal == 1:
+    def readData(self, rs, forwardSignal):
+        if forwardSignal == 1:
             return self.state.WB.write_data
-        elif forward_signal == 2:
+        elif forwardSignal == 2:
             return self.state.MEM.alu_result
         else:
             return self.rf.read_RF(rs)
@@ -195,13 +209,13 @@ class InstructionDecodeStage:
         opcode = self.state.ID.instr[:7][::-1]
         func3 = self.state.ID.instr[12:15][::-1]
 
+        #R-type instruction
         if opcode == "0110011":
-            # r-type instruction
             rs1 = self.state.ID.instr[15:20][::-1]
             rs2 = self.state.ID.instr[20:25][::-1]
 
-            forward_signal_1 = self.detect_hazard(rs1)
-            forward_signal_2 = self.detect_hazard(rs2)
+            forwardSignal1 = self.hazardDetect(rs1)
+            forwardSignal2 = self.hazardDetect(rs2)
 
             if self.state.ID.hazard_nop:
                 self.state.EX.nop = True
@@ -209,8 +223,8 @@ class InstructionDecodeStage:
 
             self.state.EX.rs = rs1
             self.state.EX.rt = rs2
-            self.state.EX.read_data_1 = self.read_data(rs1, forward_signal_1)
-            self.state.EX.read_data_2 = self.read_data(rs2, forward_signal_2)
+            self.state.EX.read_data_1 = self.readData(rs1, forwardSignal1)
+            self.state.EX.read_data_2 = self.readData(rs2, forwardSignal2)
 
             self.state.EX.write_reg_addr = self.state.ID.instr[7:12][::-1]
             self.state.EX.write_enable = True
@@ -234,18 +248,18 @@ class InstructionDecodeStage:
                 # xor instruction
                 self.state.EX.alu_op = "11"
 
+        # I-type instruction
         elif opcode == "0010011" or opcode == "0000011":
-            # i-type instruction
             rs1 = self.state.ID.instr[15:20][::-1]
 
-            forward_signal_1 = self.detect_hazard(rs1)
+            forwardSignal1 = self.hazardDetect(rs1)
 
             if self.state.ID.hazard_nop:
                 self.state.EX.nop = True
                 return
 
             self.state.EX.rs = rs1
-            self.state.EX.read_data_1 = self.read_data(rs1, forward_signal_1)
+            self.state.EX.read_data_1 = self.readData(rs1, forwardSignal1)
 
             self.state.EX.write_reg_addr = self.state.ID.instr[7:12][::-1]
             self.state.EX.is_I_type = True
@@ -266,8 +280,9 @@ class InstructionDecodeStage:
             elif func3 == "100":
                 # xor instruction
                 self.state.EX.alu_op = "11"
+
+        # J-type instruction
         elif opcode == "1101111":
-            # j-type instruction
             self.state.EX.imm = (
                 "0"
                 + self.state.ID.instr[21:31]
@@ -284,13 +299,13 @@ class InstructionDecodeStage:
             self.state.IF.PC = self.state.ID.PC + bin2int(self.state.EX.imm, sign_ext=True)
             self.state.ID.nop = True
 
+        #B-type instruction
         elif opcode == "1100011":
-            # b-type instruction
             rs1 = self.state.ID.instr[15:20][::-1]
             rs2 = self.state.ID.instr[20:25][::-1]
 
-            forward_signal_1 = self.detect_hazard(rs1)
-            forward_signal_2 = self.detect_hazard(rs2)
+            forwardSignal1 = self.hazardDetect(rs1)
+            forwardSignal2 = self.hazardDetect(rs2)
 
             if self.state.ID.hazard_nop:
                 self.state.EX.nop = True
@@ -298,8 +313,8 @@ class InstructionDecodeStage:
 
             self.state.EX.rs = rs1
             self.state.EX.rt = rs2
-            self.state.EX.read_data_1 = self.read_data(rs1, forward_signal_1)
-            self.state.EX.read_data_2 = self.read_data(rs2, forward_signal_2)
+            self.state.EX.read_data_1 = self.readData(rs1, forwardSignal1)
+            self.state.EX.read_data_2 = self.readData(rs2, forwardSignal2)
             diff = bin2int(self.state.EX.read_data_1, sign_ext=True) - bin2int(
                 self.state.EX.read_data_2, sign_ext=True
             )
@@ -319,13 +334,13 @@ class InstructionDecodeStage:
             else:
                 self.state.EX.nop = True
 
+        # SW-type instruction
         elif opcode == "0100011":
-            # sw-type instruction
             rs1 = self.state.ID.instr[15:20][::-1]
             rs2 = self.state.ID.instr[20:25][::-1]
 
-            forward_signal_1 = self.detect_hazard(rs1)
-            forward_signal_2 = self.detect_hazard(rs2)
+            forwardSignal1 = self.hazardDetect(rs1)
+            forwardSignal2 = self.hazardDetect(rs2)
 
             if self.state.ID.hazard_nop:
                 self.state.EX.nop = True
@@ -333,8 +348,8 @@ class InstructionDecodeStage:
 
             self.state.EX.rs = rs1
             self.state.EX.rt = rs2
-            self.state.EX.read_data_1 = self.read_data(rs1, forward_signal_1)
-            self.state.EX.read_data_2 = self.read_data(rs2, forward_signal_2)
+            self.state.EX.read_data_1 = self.readData(rs1, forwardSignal1)
+            self.state.EX.read_data_2 = self.readData(rs2, forwardSignal2)
 
             self.state.EX.imm = (self.state.ID.instr[7:12] + self.state.ID.instr[25:])[::-1]
             self.state.EX.is_I_type = True
@@ -343,12 +358,13 @@ class InstructionDecodeStage:
 
         if self.state.IF.nop:
             self.state.ID.nop = True
+            
         return 1
 
-class ExecutionStage:
+class Stage_EX:
     def __init__(
         self, 
-        state: State_five
+        state: State_FS
     ):
         self.state = state
 
@@ -398,10 +414,10 @@ class ExecutionStage:
         if self.state.ID.nop:
             self.state.EX.nop = True
 
-class MemoryAccessStage:
+class Stage_MEM:
     def __init__(
         self, 
-        state: State_five, 
+        state: State_FS, 
         data_mem: DataMem
     ):
         self.state = state
@@ -422,16 +438,17 @@ class MemoryAccessStage:
         else:
             self.state.WB.write_data = self.state.MEM.alu_result
             self.state.MEM.store_data = self.state.MEM.alu_result
+
         self.state.WB.write_enable = self.state.MEM.write_enable
         self.state.WB.write_reg_addr = self.state.MEM.write_reg_addr
 
         if self.state.EX.nop:
             self.state.MEM.nop = True
 
-class WriteBackStage:
+class Stage_WB:
     def __init__(
         self,
-        state: State_five,
+        state: State_FS,
         rf: RegisterFile,
     ):
         self.state = state
@@ -449,23 +466,27 @@ class WriteBackStage:
             self.state.WB.nop = True
 
 
-# five stage cpu
-class FiveStageCore(Core_five):
+
+#------------------------------------------------------------------------
+#------------------------------------------------------------------------
+#------------------------------------------------------------------------
+
+
+# FiveStageCore class definition
+class FiveStageCore(Core_FS):
     def __init__(self, ioDir, imem, dmem):
         super(FiveStageCore, self).__init__(ioDir + os.sep + "FS_", imem, dmem)
         self.opFilePath = ioDir + os.sep + "StateResult_FS.txt"
 
-        self.if_stage = InstructionFetchStage(self.state, self.ext_imem)
-        self.id_stage = InstructionDecodeStage(self.state, self.myRF)
-        self.ex_stage = ExecutionStage(self.state)
-        self.mem_stage = MemoryAccessStage(self.state, self.ext_dmem)
-        self.wb_stage = WriteBackStage(self.state, self.myRF)
+        self.stage_IF = Stage_IF(self.state, self.ext_imem)
+        self.stage_ID = Stage_ID(self.state, self.myRF)
+        self.stage_EX = Stage_EX(self.state)
+        self.stage_MEM = Stage_MEM(self.state, self.ext_dmem)
+        self.stage_WB = Stage_WB(self.state, self.myRF)
 
-        
 
     def step(self):
         # Your implementation
-
         if (
             self.state.IF.nop
             and self.state.ID.nop
@@ -474,21 +495,17 @@ class FiveStageCore(Core_five):
             and self.state.WB.nop
         ):
             self.halted = True
-        current_instr = self.state.ID.instr
+        currInstr = self.state.ID.instr
         # --------------------- WB stage ---------------------
-        self.wb_stage.run()
-
+        self.stage_WB.run()
         # --------------------- MEM stage --------------------
-        self.mem_stage.run()
-
+        self.stage_MEM.run()
         # --------------------- EX stage ---------------------
-        self.ex_stage.run()
-
+        self.stage_EX.run()
         # --------------------- ID stage ---------------------
-        self.id_stage.run()
-
+        self.stage_ID.run()
         # --------------------- IF stage ---------------------
-        self.if_stage.run()
+        self.stage_IF.run()
 
         self.myRF.output_RF(self.cycle)  # dump RF
         self.printState(
@@ -496,7 +513,7 @@ class FiveStageCore(Core_five):
         )  # print states after executing cycle 0, cycle 1, cycle 2 ...
 
         # self.state.next()  # The end of the cycle and updates the current state with the values calculated in this cycle
-        self.num_instr += int(current_instr != self.state.ID.instr)
+        self.num_instr += int(currInstr != self.state.ID.instr)
         self.cycle += 1
 
     def printState(self, state, cycle):
