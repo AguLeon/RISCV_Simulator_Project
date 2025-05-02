@@ -4,7 +4,7 @@ import os
 import argparse
 from memoryReg import *
 from singleStage import *
-from fiveStage import *
+from fiveStage2 import *
 
 
 def Performance_metrics(opFilePath: str, ss: SingleStageCore, fs: FiveStageCore):
